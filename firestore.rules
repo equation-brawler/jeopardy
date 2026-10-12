@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Jeopardy Builder storage rules.
+//
+// boards/{id}            one metadata doc per board (private boards keep no readable title)
+// boards/{id}/c/{rev-i}  base64 chunks of the board (AES-GCM encrypted for private boards)
+//
+// There are no accounts. Editing is guarded by a password-derived proof:
+//   editKey  = sha256(editSecret || nonce)   (editSecret comes from PBKDF2 of the password)
+//   editHash = sha256(editKey)                (stored on the board)
+// An update must present the editKey matching the stored editHash and rotate to a new nonce/editHash,
+// so the editKey left behind in the document by one save cannot authorize the next.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validMeta(d) {
+      return d.keys().hasOnly(['v', 'visibility', 'lookup', 'salt', 'verifier', 'rev', 'n', 'z', 'iv',
+                               'createdAt', 'updatedAt', 'title', 'cols', 'clues',
+                               'nonce', 'editHash', 'editKey', 'deleted'])
+        && d.visibility in ['public', 'private']
+        && d.lookup is string && d.lookup.size() == 64
+        && d.salt is string && d.salt.size() <= 64
+        && d.verifier is string && d.verifier.size() <= 64
+        && d.rev is string && d.rev.size() <= 32
+        && d.n is int && d.n >= 1 && d.n <= 40
+        && d.nonce is string && d.nonce.size() <= 64
+        && d.editHash is string && d.editHash.size() <= 64
+        && (!('title' in d) || (d.title is string && d.title.size() <= 120))
+        && (!('iv' in d) || (d.iv is string && d.iv.size() <= 32));
+    }
+
+    match /boards/{boardId} {
+      allow read: if true;
+
+      allow create: if validMeta(request.resource.data)
+        && !('editKey' in request.resource.data)
+        && !('deleted' in request.resource.data);
+
+      allow update: if validMeta(request.resource.data)
+        && resource.data.get('deleted', false) == false
+        && request.resource.data.editKey is string
+        && hashing.sha256(request.resource.data.editKey).toBase64() == resource.data.editHash
+        && request.resource.data.nonce != resource.data.nonce;
+
+      // Only a board already marked deleted (which needed the edit proof) can be removed.
+      allow delete: if resource.data.get('deleted', false) == true;
+
+      match /c/{chunkId} {
+        allow read: if true;
+        allow create: if request.resource.data.keys().hasOnly(['d'])
+          && request.resource.data.d is string
+          && request.resource.data.d.size() <= 210000;
+        // Chunks of the board's current version are protected; leftovers from older saves can be cleaned up.
+        allow delete: if !exists(/databases/$(database)/documents/boards/$(boardId))
+          || !chunkId.matches(get(/databases/$(database)/documents/boards/$(boardId)).data.rev + '-[0-9]+');
+      }
+    }
+  }
+}

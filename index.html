@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Build Jeopardy boards with fonts, images, LaTeX and code, lock them with a password, and play with teams.">
+<title>Jeopardy Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lobster&family=Merriweather:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;600&family=Patrick+Hand&family=Playfair+Display:wght@400;700&family=Roboto:wght@400;700&family=Roboto+Mono:wght@400;600&display=swap">
+<style>
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+:root { padding-top: env(safe-area-inset-top, 0px); }
+/* Layout: the classic quiz-board grid. Light tool bar on top, blue board with black gutters, team tally fixed to the bottom in play. */
+:root {
+  color-scheme: light;
+  --board: #2b3595;
+  --board-hi: #3742ad;
+  --board-deep: #1c2370;
+  --gutter: #000;
+  --bar: #e9e9f2;
+  --bar-ink: #1d1d26;
+  --btn-line: #8a8a96;
+  --btn-light: #d4d4de;
+  --faint: rgba(255, 255, 255, 0.28);
+  --soft: rgba(255, 255, 255, 0.55);
+  --white: #fff;
+  --gold: #ffcc4d;
+  --link: #1677e6;
+  --modal: #efefef;
+  --modal-head: #9b9b9b;
+  --ink: #222;
+  --muted: #6b6b78;
+  --danger: #b3261e;
+  --neg: #ff9b93;
+  --code-bg: #151a2f;
+  --code-ink: #e4e8f7;
+  --ui: Verdana, Geneva, Tahoma, sans-serif;
+  --boardf: "Lucida Grande", "Lucida Sans Unicode", "Open Sans", Verdana, sans-serif;
+  --cluef: "Libre Baskerville", Georgia, "Times New Roman", serif;
+  --mono: "Roboto Mono", Menlo, Consolas, monospace;
+  --colmin: 150px;
+  --rowh: 105px;
+  --gap: 6px;
+  --headh: 118px;
+  --labw: 100px;
+  --sbh: 0px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--board); color: var(--white); font-family: var(--ui); }
+#app { padding-inline: max(16px, 1.4vw); padding-block: 22px 48px; }
+body.has-scores #app { padding-bottom: calc(var(--sbh) + 32px); }
+button { font: inherit; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.ibar :focus-visible, .dlg :focus-visible, .panel :focus-visible, .pbar :focus-visible { outline-color: var(--link); }
+
+/* ---------- buttons ---------- */
+.btn {
+  background: #fff; color: var(--bar-ink); font-size: 15px; line-height: 1.2;
+  border: 2px solid var(--btn-line); border-top-color: var(--btn-light); border-left-color: var(--btn-light);
+  padding: 7px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: #f2f2f8; }
+.btn:active:not(:disabled) { border-color: var(--btn-light); border-top-color: var(--btn-line); border-left-color: var(--btn-line); }
+.btn:disabled { color: #a3a3ae; border-color: #dadae2; cursor: default; }
+.btn svg { width: 16px; height: 16px; }
+.btn-gold { background: var(--gold); border-color: #8a6a10; border-top-color: #ffe39a; border-left-color: #ffe39a; color: #1b1400; font-weight: 700; }
+.btn-gold:hover:not(:disabled) { background: #ffd76e; }
+.btn-danger { color: var(--danger); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; font-size: inherit; }
+.linkbtn:hover { text-decoration: underline; }
+
+/* ---------- instruction bar (editor) ---------- */
+.ibar { background: var(--bar); color: var(--bar-ink); padding: 16px 20px; display: grid; gap: 14px; font-size: 15px; line-height: 1.6; }
+.ibar p { margin: 0; }
+.dismiss { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; border-bottom: 1px dotted currentColor; font-size: inherit; }
+.ibar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.ibar-row .spacer { flex: 1; }
+.vis { display: inline-flex; gap: 6px; align-items: baseline; }
+.vis small { color: var(--muted); font-size: 12px; }
+
+/* ---------- board ---------- */
+.title-in {
+  display: block; margin: 34px auto 26px; width: min(100%, 980px); background: transparent; border: 0; color: var(--white);
+  text-align: center; font: 400 clamp(30px, 5vw, 58px)/1.2 var(--boardf); padding: 4px 8px;
+}
+.title-in::placeholder { color: var(--soft); }
+.title-in:focus { outline: none; background: rgba(255,255,255,0.06); }
+.board-scroll { overflow-x: auto; padding-bottom: 6px; }
+.board { display: flex; width: 100%; }
+.main-col { flex: 1; min-width: 0; }
+/* editor: one grid so the label column, header row and cells always line up; touching 3px borders make the 6px gutters */
+.egrid { display: grid; width: 100%; grid-template-rows: auto; grid-auto-rows: var(--rowh); }
+.egrid .cell { border: 3px solid var(--gutter); }
+.head { position: relative; display: flex; align-items: flex-end; padding: 0 4px 6px; min-height: 96px; }
+.cat-in {
+  width: 100%; resize: none; background: transparent; border: 0; color: var(--white); text-align: center;
+  font: 400 clamp(20px, 2.1vw, 33px)/1.45 var(--boardf); padding: 4px 4px 8px; overflow: hidden;
+}
+.cat-in::placeholder { color: var(--soft); }
+.cat-in:focus { outline: none; background: rgba(255,255,255,0.06); }
+.cells { display: grid; gap: var(--gap); background: var(--gutter); padding: 4px; grid-auto-rows: var(--rowh); }
+.label { position: relative; }
+.label-line { position: absolute; left: 0; right: 0; top: 46%; border-bottom: 2px solid #000; padding: 0 0 2px 16px; display: flex; align-items: center; gap: 4px; }
+.label-in { width: 64px; background: transparent; border: 0; color: var(--white); font: 400 19px var(--ui); padding: 0 2px; -moz-appearance: textfield; }
+.label-in::-webkit-inner-spin-button, .label-in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.label-in:focus { outline: none; background: rgba(255,255,255,0.1); }
+.cell {
+  background: var(--board); border: 0; color: var(--faint); font: 400 clamp(24px, 2.3vw, 34px) var(--boardf);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; padding: 6px 10px; min-width: 0;
+}
+button.cell:hover { background: var(--board-hi); }
+.cell.filled .cell-val { color: var(--white); }
+.cell-peek { font: 12px/1.3 var(--ui); color: var(--soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm {
+  position: absolute; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.45); color: var(--white);
+  font-size: 15px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .18s ease-out;
+}
+.head:hover .rm, .label:hover .rm, .rm:focus-visible { opacity: 1; }
+.rm:hover { background: var(--danger); }
+.rm-col { top: 6px; right: 6px; }
+.rm-row { top: calc(46% - 30px); left: 4px; }
+@media (hover: none) { .rm { opacity: .75; } }
+
+/* play board */
+.play-title { text-align: center; font: 700 clamp(26px, 4vw, 48px)/1.2 var(--boardf); margin: 22px 0 20px; text-shadow: 3px 3px 0 #000; text-wrap: balance; }
+.cells.play { grid-auto-rows: var(--rowh); grid-template-rows: minmax(96px, auto); }
+.phead {
+  background: var(--board); display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px;
+  font: 700 clamp(14px, 1.5vw, 21px)/1.25 var(--boardf); text-transform: uppercase; letter-spacing: .03em; text-shadow: 2px 2px 0 #000; overflow-wrap: anywhere;
+}
+.cells.play .cell { color: var(--gold); font: 700 clamp(26px, 3.1vw, 46px) var(--boardf); text-shadow: 3px 3px 0 #000; font-variant-numeric: tabular-nums; }
+.cells.play .cell.played { cursor: default; }
+
+/* ---------- play bar + scoreboard ---------- */
+.pbar { background: var(--bar); color: var(--bar-ink); padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px; }
+.pbar .spacer { flex: 1; }
+.pill { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border: 1px solid var(--btn-line); color: var(--muted); }
+.scores {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--board-deep); border-top: 4px solid #000;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; overflow-x: auto; align-items: stretch;
+}
+.scores-label { flex: none; display: grid; place-items: center; font: 700 12px var(--ui); letter-spacing: .12em; text-transform: uppercase; color: var(--soft); writing-mode: vertical-rl; transform: rotate(180deg); }
+.team { flex: none; width: 176px; background: var(--board); border: 3px solid #000; padding: 8px 10px 6px; display: grid; gap: 2px; position: relative; transition: border-color .25s ease-out; }
+.team.lead { border-color: var(--gold); }
+.team-name {
+  width: 100%; background: transparent; border: 0; border-bottom: 1px dashed rgba(255,255,255,0.35); color: var(--white);
+  font: 700 14px var(--ui); text-align: center; text-transform: uppercase; letter-spacing: .04em; padding: 2px 18px;
+}
+.team-name::placeholder { color: var(--soft); }
+.team-name:focus { outline: none; border-bottom-color: var(--gold); }
+.team-score {
+  width: 100%; background: transparent; border: 0; color: var(--white); font: 700 30px var(--boardf); text-align: center;
+  font-variant-numeric: tabular-nums; -moz-appearance: textfield; padding: 0;
+}
+.team-score::-webkit-inner-spin-button, .team-score::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.team-score.neg { color: var(--neg); }
+.team-score:focus { outline: none; background: rgba(255,255,255,0.08); }
+.team-score.bump { animation: bump .45s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.22); } 100% { transform: scale(1); } }
+.team-rm { position: absolute; top: 4px; right: 4px; background: none; border: 0; color: var(--soft); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; }
+.team-rm:hover { color: var(--white); }
+.add-team { flex: none; width: 120px; background: transparent; border: 2px dashed rgba(255,255,255,0.4); color: var(--white); cursor: pointer; font-size: 14px; }
+.add-team:hover { border-color: var(--white); }
+
+/* ---------- clue screen ---------- */
+.clue-ov {
+  position: fixed; left: 0; right: 0; top: 0; bottom: var(--sbh); z-index: 15; background: var(--board);
+  display: flex; flex-direction: column; gap: 16px; padding: max(18px, env(safe-area-inset-top, 0px)) 16px 18px; overflow: auto;
+  animation: clueIn .32s cubic-bezier(.16,1,.3,1);
+}
+@keyframes clueIn { from { transform: scale(.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.clue-meta { text-align: center; font: 700 15px var(--ui); letter-spacing: .1em; text-transform: uppercase; color: var(--soft); }
+.clue-meta b { color: var(--gold); }
+.clue-main { flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 22px; width: min(100%, 1100px); margin-inline: auto; }
+.clue-text { text-align: center; font: 400 clamp(22px, 3.3vw, 44px)/1.4 var(--cluef); text-shadow: 3px 3px 0 #000; overflow-wrap: anywhere; }
+.clue-resp { text-align: center; font: 700 clamp(20px, 2.7vw, 36px)/1.4 var(--cluef); color: var(--gold); text-shadow: 3px 3px 0 #000; border-top: 4px solid #000; padding-top: 20px; overflow-wrap: anywhere; animation: clueIn .3s cubic-bezier(.16,1,.3,1); }
+.clue-resp .tx svg { color: var(--gold); }
+.clue-empty { color: var(--soft); font-style: italic; }
+.clue-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.award { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.award-team { display: flex; align-items: center; gap: 6px; background: var(--board-deep); border: 2px solid #000; padding: 6px 8px 6px 12px; }
+.award-team span { font: 700 13px var(--ui); text-transform: uppercase; letter-spacing: .04em; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw { border: 2px solid rgba(255,255,255,0.4); background: transparent; color: var(--white); font: 700 13px var(--ui); padding: 5px 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.aw:hover { border-color: var(--white); }
+.aw.on.plus { background: #1f8a4c; border-color: #1f8a4c; }
+.aw.on.minus { background: var(--danger); border-color: var(--danger); }
+
+/* ---------- rich content (shared by editor + play) ---------- */
+.rich img { max-width: 100%; height: auto; vertical-align: middle; }
+.clue-text img, .clue-resp img { max-height: 46vh; text-shadow: none; }
+.tx { display: inline-block; vertical-align: middle; max-width: 100%; overflow-x: auto; overflow-y: hidden; text-shadow: none; }
+.tx.tx-block { display: block; margin: .35em auto; text-align: center; }
+.tx svg { color: inherit; }
+.tx-raw { font-family: var(--mono); font-size: .8em; }
+pre.cb {
+  position: relative; text-align: left; background: var(--code-bg); color: var(--code-ink); font: 15px/1.55 var(--mono);
+  padding: 28px 16px 14px; margin: .5em 0; overflow-x: auto; white-space: pre; text-shadow: none; border-radius: 4px; max-width: 100%;
+}
+.clue-text pre.cb, .clue-resp pre.cb { font-size: clamp(14px, 1.5vw, 20px); display: block; width: fit-content; max-width: 100%; margin-inline: auto; }
+.cb-lang { position: absolute; top: 6px; right: 10px; font: 11px var(--ui); color: #98a2c8; text-transform: uppercase; letter-spacing: .08em; }
+pre.cb code { font: inherit; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in, .hljs-type { color: #c79bff; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute { color: #a6e3a1; }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: #ffb86b; }
+.hljs-comment, .hljs-quote, .hljs-meta { color: #7f89ad; font-style: italic; }
+.hljs-title, .hljs-section, .hljs-function .hljs-title, .hljs-title.function_ { color: #7cc7ff; }
+.hljs-name, .hljs-tag, .hljs-selector-class, .hljs-selector-id { color: #ff8fa3; }
+.hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-params { color: #ffd479; }
+.hljs-deletion { color: #ff8fa3; }
+a.vid { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 2px solid currentColor; color: inherit; text-decoration: none; font-family: var(--ui); font-size: .7em; text-shadow: none; }
+.clue-text a.vid, .clue-resp a.vid { font-size: 18px; }
+a.vid:hover { background: rgba(255,255,255,0.12); }
+
+/* ---------- dialogs ---------- */
+.ov { position: fixed; inset: 0; z-index: 50; background: rgba(6, 8, 40, 0.58); display: flex; align-items: flex-start; justify-content: center; padding: max(5vh, env(safe-area-inset-top, 0px)) 16px 24px; overflow: auto; animation: fade .18s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.dlg { background: var(--modal); color: var(--ink); width: min(100%, 1360px); box-shadow: 0 24px 70px rgba(0,0,0,0.45); font-family: var(--ui); animation: rise .26s cubic-bezier(.16,1,.3,1); }
+@keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.dlg-sm { width: min(100%, 500px); }
+.dlg-md { width: min(100%, 780px); }
+.dlg-head { background: var(--modal-head); color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; font-size: clamp(16px, 1.6vw, 21px); }
+.dlg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlg-x { background: none; border: 0; color: #fff; font-style: italic; font-size: inherit; cursor: pointer; white-space: nowrap; padding: 0; }
+.dlg-x:hover { text-decoration: underline; }
+.dlg-body { padding: 20px 24px 6px; display: grid; gap: 14px; }
+.dlg-foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 14px 20px 20px; }
+.dlg-foot.split { justify-content: space-between; }
+.dlg p { margin: 0; line-height: 1.55; }
+.qa { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.qa > div { min-width: 0; }
+.qa h3 { font: 400 clamp(20px, 2vw, 27px) var(--ui); margin: 0 0 12px; color: var(--ink); }
+.hint { font-size: 16px; color: #333; margin: 10px 0 0 !important; }
+@media (max-width: 820px) { .qa { grid-template-columns: 1fr; } }
+.field { display: grid; gap: 6px; }
+.field label { font-size: 14px; color: #333; }
+.in { font: 15px var(--ui); padding: 9px 10px; border: 1px solid #b9b9c4; background: #fff; color: var(--ink); width: 100%; }
+.in:focus { outline: 2px solid var(--link); outline-offset: -1px; border-color: var(--link); }
+textarea.in { resize: vertical; }
+.mono { font-family: var(--mono) !important; font-size: 14px !important; line-height: 1.5; tab-size: 4; }
+.err { color: var(--danger); font-size: 14px; min-height: 1em; }
+.muted { color: var(--muted); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font: 13px var(--mono); padding: 4px 8px; border: 1px solid #c4c4ce; background: #fff; cursor: pointer; color: var(--ink); }
+.chip:hover { border-color: var(--link); }
+.preview { background: #fff; border: 1px dashed #b9b9c4; min-height: 70px; padding: 14px; color: var(--ink); overflow-x: auto; font-size: 20px; }
+.preview pre.cb { font-size: 14px; }
+
+/* rich text editor */
+.rte { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.22); }
+.rte-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; border-bottom: 2px solid #e4e4e4; padding: 4px 6px; }
+.tb { background: none; border: 0; min-width: 40px; height: 40px; padding: 0 8px; color: #333; font: 16px var(--ui); cursor: pointer; display: grid; place-items: center; border-radius: 3px; }
+.tb:hover { background: #ececf6; }
+.tb svg { width: 18px; height: 18px; }
+.tb sup, .tb sub { font-size: 10px; }
+.tb-sep { width: 1px; height: 26px; background: #e0e0e6; margin: 0 4px; }
+.tb-sel { font: 13px var(--ui); height: 30px; border: 1px solid #cfcfd8; background: #fff; color: var(--ink); max-width: 128px; margin: 0 2px; }
+.rte-area { min-height: 250px; max-height: 52vh; overflow: auto; padding: 18px 20px; color: var(--ink); font: 16px/1.55 var(--ui); outline: none; overflow-wrap: anywhere; }
+.rte-area:empty::before { content: attr(data-ph); color: #9a9aa4; }
+.rte:focus-within { box-shadow: 0 0 0 2px var(--link); }
+.rte-area img { max-height: 240px; }
+.rte-area .tx, .rte-area pre.cb { cursor: pointer; }
+.rte-area .tx:hover, .rte-area pre.cb:hover { outline: 2px dashed var(--link); outline-offset: 2px; }
+.rte-area a.vid { font-size: 14px; color: var(--link); }
+
+/* ---------- home ---------- */
+.home { max-width: 1100px; margin-inline: auto; display: grid; gap: 22px; }
+.logo { text-align: center; margin: 18px 0 0; }
+.logo h1 { margin: 0; font: 700 clamp(44px, 8vw, 92px)/1 var(--cluef); letter-spacing: .01em; text-shadow: 4px 4px 0 #000; }
+.logo h1 span { color: var(--gold); }
+.logo p { margin: 12px auto 0; max-width: 52ch; color: var(--soft); font-size: 15px; line-height: 1.6; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 22px; }
+.panel { background: var(--bar); color: var(--bar-ink); padding: 20px 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.panel h2 { margin: 0; font: 700 18px var(--ui); }
+.panel p { margin: 0; font-size: 14px; line-height: 1.6; color: #44444f; }
+.panel form { display: grid; gap: 10px; }
+.notice { background: #fff6d6; color: #4a3b00; border: 1px solid #e6cf7a; padding: 10px 14px; font-size: 14px; line-height: 1.55; }
+.pub-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.pub-head .in { width: min(100%, 260px); }
+.pub-list { display: grid; }
+.pub-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 0; border-top: 1px solid #d5d5df; }
+.pub-row:first-child { border-top: 0; }
+.pub-title { flex: 1 1 220px; min-width: 0; }
+.pub-title b { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.pub-title small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pub-empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+
+.toast { position: fixed; top: max(16px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 80; background: var(--bar); color: var(--bar-ink); border: 2px solid #000; padding: 10px 16px; font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); max-width: calc(100% - 32px); animation: rise .25s cubic-bezier(.16,1,.3,1); }
+.busy { display: grid; place-items: center; gap: 12px; padding: 30px 20px; font-size: 15px; }
+@media (max-width: 600px) {
+  :root { --colmin: 120px; --rowh: 84px; --headh: 100px; --labw: 74px; }
+  .label-line { padding-left: 6px; }
+  .team { width: 148px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+window.MathJax = {
+  tex: { packages: { '[+]': ['ams'] } },
+  svg: { fontCache: 'none' },
+  startup: { typeset: false },
+  options: { enableMenu: false },
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// Firebase web config (Project settings > Your apps > Web app). These values are public by design;
+// firestore.rules is what protects the data.
+window.FIREBASE_CONFIG = {
+  apiKey: '',
+  authDomain: '',
+  projectId: '',
+  storageBucket: '',
+  messagingSenderId: '',
+  appId: '',
+};
+</script>
+<script>
+'use strict';
+const app = document.getElementById('app');
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+const CHUNK = 200000; // base64 chars per stored chunk; documents cap at 256 KiB
+const PBKDF2_ITER = 200000;
+const HIST_MAX = 60;
+
+const S = {
+  db: null, canWrite: null, conn: 'connecting', view: 'home',
+  boards: [], listErr: null, filter: '',
+  cur: null, // { id, meta, board, keys, savedJson, dirty }
+  play: null, undo: [], redo: [],
+};
+
+/* ---------------- tiny DOM helper ---------------- */
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const ICON = {
+  undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  redo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
+  eraser: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.1 3.6a2 2 0 0 1 2.8 0l3.5 3.5a2 2 0 0 1 0 2.8L12.3 19H20v2H8.6l-5-5a2 2 0 0 1 0-2.8zM9.4 9.3l-4.4 4.4 4.3 4.3h2.2l3.1-3.1z"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="m4 18 5-5 4 4 3-3 4 4" stroke-linejoin="round"/></svg>',
+  video: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="14" height="12" rx="1.5"/><path d="m17 10 5-3v10l-5-3z"/></svg>',
+};
+
+function toast(msg, ms = 3200) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
+  const t = h('div', { class: 'toast', role: 'status', text: msg });
+  document.body.append(t);
+  setTimeout(() => t.remove(), ms);
+}
+function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } }
+
+/* ---------------- sanitising + rendering rich content ---------------- */
+if (window.DOMPurify) {
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+  });
+}
+function sanitize(html) {
+  if (!html) return '';
+  if (window.DOMPurify) {
+    return DOMPurify.sanitize(html, {
+      FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'svg', 'math'],
+      FORBID_ATTR: ['contenteditable', 'id'],
+      ALLOW_DATA_ATTR: true, ADD_ATTR: ['target'],
+    });
+  }
+  const d = document.createElement('div');
+  d.textContent = html.replace(/<[^>]*>/g, ' ');
+  return d.innerHTML;
+}
+function hasContent(html) {
+  if (!html) return false;
+  const d = document.createElement('div');
+  d.innerHTML = sanitize(html);
+  return d.textContent.trim().length > 0 || !!d.querySelector('img,.tx,pre.cb,a.vid');
+}
+function plainText(html) {
+  const d = document.createElement('div');
+  d.innerHTML = sanitize(html);
+  d.querySelectorAll('.tx').forEach((n) => n.replaceWith('[math]'));
+  d.querySelectorAll('pre.cb').forEach((n) => n.replaceWith('[code]'));
+  d.querySelectorAll('img').forEach((n) => n.replaceWith('[image]'));
+  return d.textContent.replace(/\s+/g, ' ').trim();
+}
+
+let mjReady = null;
+function mathReady() {
+  if (!mjReady) {
+    mjReady = window.MathJax && MathJax.startup && MathJax.startup.promise
+      ? MathJax.startup.promise.then(() => { try { document.head.append(MathJax.svgStylesheet()); } catch { /* older build */ } return true; }, () => false)
+      : Promise.resolve(false);
+  }
+  return mjReady;
+}
+async function fillMath(el) {
+  const tex = el.dataset.tex || '';
+  const display = el.dataset.display === '1';
+  el.classList.add('tx');
+  el.classList.toggle('tx-block', display);
+  el.replaceChildren(h('span', { class: 'tx-raw', text: tex }));
+  if (!(await mathReady())) return;
+  try {
+    const node = MathJax.tex2svgPromise ? await MathJax.tex2svgPromise(tex, { display }) : MathJax.tex2svg(tex, { display });
+    if (el.dataset.tex !== tex) return;
+    el.replaceChildren(node);
+  } catch { /* keep the raw TeX visible */ }
+}
+const LANGS = [
+  ['plaintext', 'Plain text'], ['python', 'Python'], ['javascript', 'JavaScript'], ['typescript', 'TypeScript'], ['java', 'Java'],
+  ['c', 'C'], ['cpp', 'C++'], ['csharp', 'C#'], ['go', 'Go'], ['rust', 'Rust'], ['ruby', 'Ruby'], ['php', 'PHP'], ['swift', 'Swift'],
+  ['kotlin', 'Kotlin'], ['r', 'R'], ['sql', 'SQL'], ['bash', 'Bash'], ['xml', 'HTML / XML'], ['css', 'CSS'], ['json', 'JSON'], ['yaml', 'YAML'],
+];
+function langLabel(l) { return (LANGS.find((x) => x[0] === l) || [l, l])[1]; }
+function fillCode(el) {
+  const code = el.dataset.code || '';
+  const lang = el.dataset.lang || 'plaintext';
+  const c = h('code', { class: 'hljs' });
+  try {
+    if (window.hljs && lang !== 'plaintext' && hljs.getLanguage(lang)) c.innerHTML = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    else c.textContent = code;
+  } catch { c.textContent = code; }
+  el.classList.add('cb');
+  el.replaceChildren(h('span', { class: 'cb-lang', text: langLabel(lang) }), c);
+}
+function hydrate(root, editable) {
+  root.querySelectorAll('span[data-tex]').forEach((el) => { fillMath(el); if (editable) el.contentEditable = 'false'; });
+  root.querySelectorAll('pre[data-code]').forEach((el) => { fillCode(el); if (editable) el.contentEditable = 'false'; });
+}
+function renderRich(html) {
+  const d = h('div', { class: 'rich' });
+  d.innerHTML = sanitize(html);
+  hydrate(d, false);
+  return d;
+}
+
+/* ---------------- crypto + storage encoding ---------------- */
+function b64(buf) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function unb64(s) {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function randBytes(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+function randHex(n) { return [...randBytes(n)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
+async function sha256hex(str) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(str)));
+  return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function normTitle(t) { return t.trim().toLowerCase().replace(/\s+/g, ' '); }
+function lookupFor(title) { return sha256hex('jeopardy-board:' + normTitle(title)); }
+// 768 PBKDF2 bits: [0,32) AES-GCM key, sha256([32,64)) the stored password check, [64,96) the edit secret.
+async function deriveKeys(password, saltB64) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: unb64(saltB64), iterations: PBKDF2_ITER, hash: 'SHA-256' }, base, 768));
+  const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  const verifier = b64(await crypto.subtle.digest('SHA-256', bits.slice(32, 64)));
+  return { key, verifier, salt: saltB64, password, secret: bits.slice(64, 96) };
+}
+// Edit proof: editKey = sha256(secret || nonce); the board stores editHash = sha256(editKey).
+// A change must present the current editKey (firestore.rules checks the hash) and rotate to a new nonce,
+// so the key revealed by one save is useless for the next.
+async function editKeyFor(keys, nonce) {
+  const n = unb64(nonce);
+  const buf = new Uint8Array(keys.secret.length + n.length);
+  buf.set(keys.secret); buf.set(n, keys.secret.length);
+  return b64(await crypto.subtle.digest('SHA-256', buf));
+}
+async function editHashOf(editKey) { return b64(await crypto.subtle.digest('SHA-256', enc.encode(editKey))); }
+async function pipeBytes(bytes, stream) {
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+}
+async function packBoard(board, keys) {
+  let bytes = enc.encode(JSON.stringify(board));
+  let z = 0;
+  if (window.CompressionStream) { bytes = await pipeBytes(bytes, new CompressionStream('gzip')); z = 1; }
+  let iv = null;
+  if (board.visibility === 'private') {
+    const ivb = randBytes(12);
+    bytes = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivb }, keys.key, bytes));
+    iv = b64(ivb);
+  }
+  return { data: b64(bytes), z, iv };
+}
+async function unpackBoard(data, meta, keys) {
+  let bytes = unb64(data);
+  if (meta.visibility === 'private') bytes = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(meta.iv) }, keys.key, bytes));
+  if (meta.z) bytes = await pipeBytes(bytes, new DecompressionStream('gzip'));
+  return JSON.parse(dec.decode(bytes));
+}
+
+function dbErrMsg(e, action) {
+  const code = e && e.code;
+  if (code === 'invalid-argument') return 'This board is too large to save. Remove some images or use smaller ones, then try again.';
+  if (code === 'permission-denied') return `The database refused to ${action} the board. Reopen it with its title and password, then try again.`;
+  if (code === 'resource-exhausted') return "The site has used up today's free database allowance. Try again tomorrow.";
+  return `Couldn't ${action} the board. Check your connection and try again.`;
+}
+async function withRetry(fn) {
+  try { return await fn(); } catch (e) {
+    if (e && (e.code === 'unavailable' || e.code === 'deadline-exceeded')) { await new Promise((r) => setTimeout(r, 400 + Math.random() * 600)); return fn(); }
+    throw e;
+  }
+}
+async function saveToDb(cur) {
+  const { board, keys } = cur;
+  const id = cur.id || randHex(10);
+  const { data, z, iv } = await packBoard(board, keys);
+  const rev = randHex(6);
+  const n = Math.max(1, Math.ceil(data.length / CHUNK));
+  for (let i = 0; i < n; i++) {
+    await withRetry(() => S.db.doc(`boards/${id}/c/${rev}-${i}`).set({ d: data.slice(i * CHUNK, (i + 1) * CHUNK) }));
+  }
+  const now = Date.now();
+  const meta = {
+    v: 1, visibility: board.visibility, lookup: await lookupFor(board.title), salt: keys.salt, verifier: keys.verifier,
+    rev, n, z, createdAt: (cur.meta && cur.meta.createdAt) || now, updatedAt: now,
+  };
+  if (iv) meta.iv = iv;
+  meta.nonce = b64(randBytes(16));
+  meta.editHash = await editHashOf(await editKeyFor(keys, meta.nonce));
+  if (cur.meta) meta.editKey = await editKeyFor(keys, cur.meta.nonce);
+  if (board.visibility === 'public') {
+    meta.title = board.title.trim();
+    meta.cols = board.cols.length;
+    meta.clues = board.cells.flat().filter((c) => hasContent(c.q)).length;
+  }
+  try {
+    await withRetry(() => S.db.doc(`boards/${id}`).set(meta));
+  } catch (e) {
+    // The board doc refused this version: remove the chunks just written so they don't linger.
+    for (let i = 0; i < n; i++) await S.db.doc(`boards/${id}/c/${rev}-${i}`).delete().catch(() => {});
+    throw e;
+  }
+  const old = cur.meta;
+  if (old && old.rev && old.rev !== rev) {
+    for (let i = 0; i < old.n; i++) await S.db.doc(`boards/${id}/c/${old.rev}-${i}`).delete().catch(() => {});
+  }
+  cur.id = id;
+  cur.meta = meta;
+}
+async function loadFromDb(id, meta, keys) {
+  const snaps = await Promise.all(Array.from({ length: meta.n }, (_, i) => withRetry(() => S.db.doc(`boards/${id}/c/${meta.rev}-${i}`).get())));
+  if (snaps.some((s) => !s.exists)) throw new Error('missing');
+  return unpackBoard(snaps.map((s) => s.data().d).join(''), meta, keys);
+}
+async function findBoard(title, password) {
+  const lookup = await lookupFor(title);
+  const snap = await withRetry(() => S.db.collection('boards').where('lookup', '==', lookup).limit(25).get());
+  for (const d of snap.docs) {
+    const m = d.data();
+    if (!m.salt || m.deleted) continue;
+    const keys = await deriveKeys(password, m.salt);
+    if (keys.verifier === m.verifier) return { id: d.id, meta: m, keys };
+  }
+  return null;
+}
+async function deleteFromDb(cur) {
+  const m = cur.meta;
+  const ref = S.db.doc(`boards/${cur.id}`);
+  // Mark deleted with the edit proof first; the rules then let the chunks and the marker itself be removed.
+  const tomb = { ...m, editKey: await editKeyFor(cur.keys, m.nonce), nonce: b64(randBytes(16)), editHash: b64(randBytes(32)), rev: 'deleted', deleted: true };
+  delete tomb.title;
+  await withRetry(() => ref.set(tomb));
+  for (let i = 0; i < m.n; i++) await S.db.doc(`boards/${cur.id}/c/${m.rev}-${i}`).delete().catch(() => {});
+  await ref.delete().catch(() => {});
+}
+
+/* ---------------- board model ---------------- */
+function newBoard() {
+  const C = 5, R = 5;
+  return {
+    v: 1, title: '', visibility: 'public',
+    cols: Array.from({ length: C }, () => ({ name: '' })),
+    rows: Array.from({ length: R }, (_, i) => ({ value: (i + 1) * 100 })),
+    cells: Array.from({ length: R }, () => Array.from({ length: C }, () => ({ q: '', a: '' }))),
+  };
+}
+function filled(cell) { return !!cell && (hasContent(cell.q) || hasContent(cell.a)); }
+function pushHistory(snapshot) {
+  S.undo.push(snapshot || JSON.stringify(S.cur.board));
+  if (S.undo.length > HIST_MAX) S.undo.shift();
+  S.redo = [];
+  S.cur.dirty = true;
+}
+function undo() {
+  if (!S.undo.length) return;
+  S.redo.push(JSON.stringify(S.cur.board));
+  S.cur.board = JSON.parse(S.undo.pop());
+  S.cur.dirty = true;
+  renderEditor();
+}
+function redo() {
+  if (!S.redo.length) return;
+  S.undo.push(JSON.stringify(S.cur.board));
+  S.cur.board = JSON.parse(S.redo.pop());
+  S.cur.dirty = true;
+  renderEditor();
+}
+window.addEventListener('beforeunload', (e) => { if (S.view === 'edit' && S.cur && S.cur.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------- dialogs ---------------- */
+const stack = [];
+function openDialog({ title, body, foot, size = '', closeText = 'Cancel [ESC]', onClose }) {
+  const entry = {};
+  const close = () => {
+    ov.remove();
+    const i = stack.indexOf(entry);
+    if (i >= 0) stack.splice(i, 1);
+  };
+  entry.close = close;
+  entry.esc = () => { close(); if (onClose) onClose(); };
+  const box = h('div', { class: `dlg ${size}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    h('div', { class: 'dlg-head' }, h('span', { class: 'dlg-title', text: title }), h('button', { type: 'button', class: 'dlg-x', text: closeText, onclick: () => entry.esc() })),
+    h('div', { class: 'dlg-body' }, body), foot || null);
+  const ov = h('div', { class: 'ov' }, box);
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) entry.downOnOv = true; else entry.downOnOv = false; });
+  document.body.append(ov);
+  stack.push(entry);
+  return entry;
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && stack.length) { e.preventDefault(); stack[stack.length - 1].esc(); return; }
+  if (S.view === 'edit' && !stack.length && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+  }
+});
+function confirmDialog({ title, text, okText, danger, onOk }) {
+  const d = openDialog({
+    title, size: 'dlg-sm', body: h('p', { text }),
+    foot: h('div', { class: 'dlg-foot' },
+      h('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => d.close() }),
+      h('button', { type: 'button', class: 'btn' + (danger ? ' btn-danger' : ''), text: okText, onclick: () => { d.close(); onOk(); } })),
+  });
+  setTimeout(() => d && document.querySelector('.ov:last-child .dlg-foot .btn:last-child')?.focus(), 0);
+  return d;
+}
+function passwordField(id, label, auto) {
+  const input = h('input', { class: 'in', id, type: 'password', autocomplete: auto });
+  return { input, el: h('div', { class: 'field' }, h('label', { for: id, text: label }), input) };
+}
+
+/* ---------------- rich text editor ---------------- */
+const FONTS = [
+  ['Font', ''], ['Verdana', 'Verdana, Geneva, sans-serif'], ['Arial', 'Arial, Helvetica, sans-serif'], ['Georgia', 'Georgia, serif'],
+  ['Times New Roman', '"Times New Roman", Times, serif'], ['Courier New', '"Courier New", Courier, monospace'],
+  ['Libre Baskerville', '"Libre Baskerville", Georgia, serif'], ['Merriweather', 'Merriweather, Georgia, serif'],
+  ['Playfair Display', '"Playfair Display", Georgia, serif'], ['Open Sans', '"Open Sans", Arial, sans-serif'], ['Roboto', 'Roboto, Arial, sans-serif'],
+  ['Oswald', 'Oswald, "Arial Narrow", sans-serif'], ['Roboto Mono', '"Roboto Mono", "Courier New", monospace'],
+  ['Patrick Hand', '"Patrick Hand", "Comic Sans MS", cursive'], ['Lobster', 'Lobster, Georgia, cursive'],
+];
+const SIZES = [['Size', ''], ['Small', '2'], ['Normal', '3'], ['Large', '5'], ['Huge', '6'], ['Giant', '7']];
+
+async function imageToDataUrl(file) {
+  const raw = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
+  if (file.size <= 220 * 1024) return raw;
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = raw; });
+  const max = 1280;
+  const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * sc)), ht = Math.max(1, Math.round(img.naturalHeight * sc));
+  const cv = h('canvas', { width: w, height: ht });
+  const g = cv.getContext('2d');
+  const keepAlpha = file.type === 'image/png' && w * ht <= 500000;
+  if (!keepAlpha) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, ht); }
+  g.drawImage(img, 0, 0, w, ht);
+  return keepAlpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.84);
+}
+
+function makeEditor(html, label) {
+  const area = h('div', { class: 'rte-area rich', contenteditable: 'true', 'data-ph': 'Type something', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label });
+  area.innerHTML = sanitize(html);
+  hydrate(area, true);
+  let saved = null;
+  const saveSel = () => {
+    const s = getSelection();
+    if (s.rangeCount && area.contains(s.getRangeAt(0).commonAncestorContainer)) saved = s.getRangeAt(0).cloneRange();
+  };
+  document.addEventListener('selectionchange', saveSel);
+  const restore = () => {
+    area.focus();
+    if (saved) { const s = getSelection(); s.removeAllRanges(); s.addRange(saved); }
+  };
+  const fixEmpty = () => { if (!hasContent(area.innerHTML) && area.innerHTML !== '') area.innerHTML = ''; };
+  const cmd = (c, v) => {
+    restore();
+    document.execCommand('styleWithCSS', false, c !== 'superscript' && c !== 'subscript');
+    document.execCommand(c, false, v);
+    saveSel();
+  };
+  const insertNode = (node) => {
+    restore();
+    const s = getSelection();
+    let r = s.rangeCount ? s.getRangeAt(0) : null;
+    if (!r || !area.contains(r.commonAncestorContainer)) { r = document.createRange(); r.selectNodeContents(area); r.collapse(false); }
+    r.deleteContents();
+    r.insertNode(node);
+    const after = document.createTextNode(' ');
+    node.after(after);
+    r = document.createRange();
+    r.setStartAfter(after); r.collapse(true);
+    s.removeAllRanges(); s.addRange(r);
+    saved = r.cloneRange();
+  };
+  const insertImages = async (files) => {
+    for (const f of files) {
+      if (!f.type.startsWith('image/')) continue;
+      try { insertNode(h('img', { src: await imageToDataUrl(f), alt: '' })); } catch { toast(`Couldn't read ${f.name}. Try a PNG, JPEG or GIF.`); }
+    }
+  };
+  area.addEventListener('input', fixEmpty);
+  area.addEventListener('paste', (e) => {
+    const dt = e.clipboardData;
+    if (!dt) return;
+    e.preventDefault();
+    const imgs = [...dt.files].filter((f) => f.type.startsWith('image/'));
+    if (imgs.length) { insertImages(imgs); return; }
+    document.execCommand('insertText', false, dt.getData('text/plain'));
+  });
+  area.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    e.preventDefault();
+    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+    if (r && area.contains(r.commonAncestorContainer)) saved = r;
+    insertImages(files);
+  });
+  area.addEventListener('click', (e) => {
+    const t = e.target.closest('span[data-tex], pre[data-code]');
+    if (!t || !area.contains(t)) return;
+    if (t.matches('span[data-tex]')) openMathDialog(t, insertNode); else openCodeDialog(t, insertNode);
+  });
+
+  const tb = (inner, title, act) => h('button', { type: 'button', class: 'tb', title, 'aria-label': title, html: `<span>${inner}</span>`, onmousedown: (e) => e.preventDefault(), onclick: act });
+  const fileIn = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: async () => { await insertImages([...fileIn.files]); fileIn.value = ''; } });
+  const fontSel = h('select', { class: 'tb-sel', 'aria-label': 'Font', title: 'Font' },
+    FONTS.map(([n, v]) => h('option', { value: v, style: v ? `font-family:${v}` : null, text: n })));
+  fontSel.addEventListener('change', () => { if (fontSel.value) cmd('fontName', fontSel.value); fontSel.value = ''; });
+  const sizeSel = h('select', { class: 'tb-sel', 'aria-label': 'Text size', title: 'Text size' }, SIZES.map(([n, v]) => h('option', { value: v, text: n })));
+  sizeSel.addEventListener('change', () => { if (sizeSel.value) cmd('fontSize', sizeSel.value); sizeSel.value = ''; });
+  const bar = h('div', { class: 'rte-bar' },
+    tb('x<sup>2</sup>', 'Superscript', () => cmd('superscript')),
+    tb('x<sub>2</sub>', 'Subscript', () => cmd('subscript')),
+    tb('<b>B</b>', 'Bold', () => cmd('bold')),
+    tb('<i style="font-family:Georgia,serif;font-size:19px">I</i>', 'Italic', () => cmd('italic')),
+    tb(ICON.eraser, 'Clear formatting', () => cmd('removeFormat')),
+    h('span', { class: 'tb-sep' }),
+    fontSel, sizeSel,
+    h('span', { class: 'tb-sep' }),
+    tb(ICON.image, 'Upload image', () => { saveSel(); fileIn.click(); }),
+    tb(ICON.video, 'Add video link', () => { saveSel(); openVideoDialog(insertNode); }),
+    tb('<span style="font-size:19px">∑</span>', 'LaTeX math', () => { saveSel(); openMathDialog(null, insertNode); }),
+    h('span', { class: 'tb-sep' }),
+    tb('<span style="font-family:var(--mono);font-size:14px;font-weight:600">&lt;/&gt;</span>', 'Code block', () => { saveSel(); openCodeDialog(null, insertNode); }),
+    fileIn);
+  return {
+    el: h('div', { class: 'rte' }, bar, area),
+    area,
+    getHtml() {
+      const c = area.cloneNode(true);
+      c.querySelectorAll('span[data-tex], pre[data-code]').forEach((n) => { n.textContent = ''; n.removeAttribute('contenteditable'); });
+      const out = sanitize(c.innerHTML);
+      return hasContent(out) ? out : '';
+    },
+    destroy() { document.removeEventListener('selectionchange', saveSel); },
+  };
+}
+
+function openMathDialog(existing, insert) {
+  const ta = h('textarea', { class: 'in mono', id: 'tex-in', rows: '4', spellcheck: 'false', placeholder: 'e.g.  \\int_0^1 x^2\\,dx = \\frac{1}{3}' });
+  ta.value = existing ? existing.dataset.tex || '' : '';
+  const disp = h('input', { type: 'checkbox', id: 'tex-disp' });
+  disp.checked = existing ? existing.dataset.display === '1' : false;
+  const prev = h('div', { class: 'preview', 'aria-live': 'polite' });
+  let t;
+  const upd = () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (!ta.value.trim()) { prev.replaceChildren(h('span', { class: 'muted', text: 'The rendered math shows here.' })); return; }
+      const s = h('span', { 'data-tex': ta.value.trim(), 'data-display': disp.checked ? '1' : '0' });
+      prev.replaceChildren(s);
+      fillMath(s);
+    }, 180);
+  };
+  ta.addEventListener('input', upd);
+  disp.addEventListener('change', upd);
+  const snip = [['fraction', '\\frac{a}{b}'], ['power', 'x^{n}'], ['subscript', 'x_{i}'], ['√', '\\sqrt{x}'], ['∫', '\\int_{a}^{b}'], ['Σ', '\\sum_{n=1}^{\\infty}'],
+    ['lim', '\\lim_{x \\to 0}'], ['π', '\\pi'], ['θ', '\\theta'], ['∞', '\\infty'], ['≤', '\\le'], ['≥', '\\ge'], ['≠', '\\ne'], ['·', '\\cdot'],
+    ['vector', '\\vec{v}'], ['matrix', '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}']];
+  const chips = h('div', { class: 'chips' }, snip.map(([lbl, s]) => h('button', {
+    type: 'button', class: 'chip', text: lbl, title: s,
+    onclick: () => { const a = ta.selectionStart, b = ta.selectionEnd; ta.setRangeText(s, a, b, 'end'); ta.focus(); upd(); },
+  })));
+  const err = h('div', { class: 'err' });
+  const done = () => {
+    const tex = ta.value.trim();
+    if (!tex) { err.textContent = 'Type some LaTeX first.'; return; }
+    const node = h('span', { 'data-tex': tex, 'data-display': disp.checked ? '1' : '0', contenteditable: 'false' });
+    fillMath(node);
+    d.close();
+    if (existing) existing.replaceWith(node); else insert(node);
+  };
+  const d = openDialog({
+    title: existing ? 'Edit LaTeX' : 'Insert LaTeX', size: 'dlg-md',
+    body: [
+      h('div', { class: 'field' }, h('label', { for: 'tex-in', text: 'LaTeX' }), ta), chips,
+      h('label', { class: 'check', for: 'tex-disp' }, disp, 'Show on its own centered line'),
+      prev, err,
+    ],
+    foot: h('div', { class: 'dlg-foot' + (existing ? ' split' : '') },
+      existing ? h('button', { type: 'button', class: 'btn btn-danger', text: 'Remove', onclick: () => { existing.remove(); d.close(); } }) : null,
+      h('button', { type: 'button', class: 'btn', text: existing ? 'Update' : 'Insert', onclick: done })),
+  });
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) done(); });
+  upd();
+  ta.focus();
+}
+
+function openCodeDialog(existing, insert) {
+  const sel = h('select', { class: 'in', id: 'code-lang' }, LANGS.map(([v, n]) => h('option', { value: v, text: n })));
+  sel.value = existing ? existing.dataset.lang || 'plaintext' : (lsGet('jp-lang') || 'python');
+  const ta = h('textarea', { class: 'in mono', id: 'code-in', rows: '10', spellcheck: 'false', placeholder: 'def greet(name):\n    return f"Hello, {name}!"' });
+  ta.value = existing ? existing.dataset.code || '' : '';
+  const prev = h('div', { class: 'preview' });
+  const upd = () => {
+    if (!ta.value) { prev.replaceChildren(h('span', { class: 'muted', text: 'The highlighted code shows here.' })); return; }
+    const p = h('pre', { 'data-code': ta.value, 'data-lang': sel.value });
+    fillCode(p);
+    prev.replaceChildren(p);
+  };
+  ta.addEventListener('input', upd);
+  sel.addEventListener('change', upd);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); ta.setRangeText('    ', ta.selectionStart, ta.selectionEnd, 'end'); upd(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) done();
+  });
+  const err = h('div', { class: 'err' });
+  const done = () => {
+    if (!ta.value.trim()) { err.textContent = 'Type some code first.'; return; }
+    lsSet('jp-lang', sel.value);
+    const node = h('pre', { 'data-code': ta.value.replace(/\s+$/, ''), 'data-lang': sel.value, contenteditable: 'false' });
+    fillCode(node);
+    d.close();
+    if (existing) existing.replaceWith(node); else insert(node);
+  };
+  const d = openDialog({
+    title: existing ? 'Edit code block' : 'Insert code block', size: 'dlg-md',
+    body: [h('div', { class: 'field' }, h('label', { for: 'code-lang', text: 'Language' }), sel), h('div', { class: 'field' }, h('label', { for: 'code-in', text: 'Code' }), ta), prev, err],
+    foot: h('div', { class: 'dlg-foot' + (existing ? ' split' : '') },
+      existing ? h('button', { type: 'button', class: 'btn btn-danger', text: 'Remove', onclick: () => { existing.remove(); d.close(); } }) : null,
+      h('button', { type: 'button', class: 'btn', text: existing ? 'Update' : 'Insert', onclick: done })),
+  });
+  upd();
+  ta.focus();
+}
+
+function openVideoDialog(insert) {
+  const url = h('input', { class: 'in', id: 'vid-url', type: 'url', placeholder: 'https://www.youtube.com/watch?v=…' });
+  const label = h('input', { class: 'in', id: 'vid-label', type: 'text', placeholder: 'Watch the clip' });
+  const err = h('div', { class: 'err' });
+  const done = () => {
+    let u;
+    try { u = new URL(url.value.trim()); } catch { u = null; }
+    if (!u || !/^https?:$/.test(u.protocol)) { err.textContent = 'Paste a full link that starts with https://'; return; }
+    d.close();
+    insert(h('a', { class: 'vid', href: u.href, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + (label.value.trim() || 'Watch video')));
+  };
+  const d = openDialog({
+    title: 'Add a video', size: 'dlg-sm',
+    body: [
+      h('p', { class: 'muted', text: 'Videos open in a new tab when someone clicks the link during the game.' }),
+      h('div', { class: 'field' }, h('label', { for: 'vid-url', text: 'Video link' }), url),
+      h('div', { class: 'field' }, h('label', { for: 'vid-label', text: 'Link text (optional)' }), label), err],
+    foot: h('div', { class: 'dlg-foot' }, h('button', { type: 'button', class: 'btn', text: 'Insert', onclick: done })),
+  });
+  [url, label].forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(); }));
+  url.focus();
+}
+
+/* ---------------- board grid (edit + play) ---------------- */
+function boardGrid(mode) {
+  const b = S.cur.board;
+  const C = b.cols.length;
+  const tmpl = `grid-template-columns:repeat(${C}, minmax(var(--colmin), 1fr))`;
+  const minW = `min-width:calc(${mode === 'edit' ? 'var(--labw) + ' : ''}${C} * (var(--colmin) + var(--gap)) + 8px)`;
+  if (mode === 'play') {
+    const played = new Set(S.play.played);
+    const cells = h('div', { class: 'cells play', style: tmpl },
+      b.cols.map((col) => h('div', { class: 'phead', text: col.name.trim() })),
+      b.rows.map((row, r) => b.cells[r].map((cell, c) => {
+        const k = `${r},${c}`;
+        if (played.has(k) || !filled(cell)) return h('div', { class: 'cell played', 'aria-hidden': 'true' });
+        return h('button', { type: 'button', class: 'cell', text: row.value, 'aria-label': `${b.cols[c].name || 'Category ' + (c + 1)} for ${row.value}`, onclick: () => openClue(r, c) });
+      })));
+    return h('div', { class: 'board-scroll' }, h('div', { class: 'board', style: minW }, h('div', { class: 'main-col' }, cells)));
+  }
+  const heads = b.cols.map((col, c) => {
+    const ta = h('textarea', { class: 'cat-in', id: `cat-${c}`, rows: '2', placeholder: 'Enter Category Name', 'aria-label': `Category ${c + 1} name`, maxlength: '80' });
+    ta.value = col.name;
+    trackField(ta, (v) => { col.name = v; });
+    return h('div', { class: 'head' }, ta,
+      C > 1 ? h('button', { type: 'button', class: 'rm rm-col', title: 'Remove this column', 'aria-label': `Remove column ${c + 1}`, text: '×', onclick: () => removeCol(c) }) : null);
+  });
+  const label = (row, r) => {
+    const inp = h('input', { class: 'label-in', id: `val-${r}`, type: 'number', step: '100', value: row.value, 'aria-label': `Point value for row ${r + 1}` });
+    trackField(inp, (v) => { row.value = Number(v) || 0; }, true);
+    return h('div', { class: 'label' }, h('div', { class: 'label-line' }, inp),
+      b.rows.length > 1 ? h('button', { type: 'button', class: 'rm rm-row', title: 'Remove this row', 'aria-label': `Remove row ${r + 1}`, text: '×', onclick: () => removeRow(r) }) : null);
+  };
+  const cells = b.rows.map((row, r) => [label(row, r), b.cells[r].map((cell, c) => {
+    const isFilled = filled(cell);
+    return h('button', { type: 'button', class: 'cell' + (isFilled ? ' filled' : ''), 'aria-label': `Edit ${b.cols[c].name || 'category ' + (c + 1)} for ${row.value}`, onclick: () => openCellEditor(r, c) },
+      h('span', { class: 'cell-val', text: row.value }),
+      isFilled ? h('span', { class: 'cell-peek', text: plainText(cell.q) || '(response only)' }) : null);
+  })]);
+  const etmpl = `grid-template-columns:var(--labw) repeat(${C}, minmax(var(--colmin), 1fr));${minW}`;
+  return h('div', { class: 'board-scroll' }, h('div', { class: 'egrid', style: etmpl }, h('div'), heads, cells));
+}
+// Text fields edit the board live; one undo step per focus session.
+function trackField(el, apply, rerender) {
+  let before = null;
+  el.addEventListener('focus', () => { before = JSON.stringify(S.cur.board); });
+  el.addEventListener('input', () => { apply(el.value); S.cur.dirty = true; });
+  el.addEventListener('change', () => {
+    if (before && before !== JSON.stringify(S.cur.board)) { pushHistory(before); before = JSON.stringify(S.cur.board); updateUndoButtons(); }
+    if (rerender) renderEditor();
+  });
+}
+function removeCol(c) {
+  pushHistory();
+  const b = S.cur.board;
+  b.cols.splice(c, 1);
+  b.cells.forEach((row) => row.splice(c, 1));
+  renderEditor();
+}
+function removeRow(r) {
+  pushHistory();
+  const b = S.cur.board;
+  b.rows.splice(r, 1);
+  b.cells.splice(r, 1);
+  renderEditor();
+}
+function addRow() {
+  pushHistory();
+  const b = S.cur.board;
+  const last = b.rows.length ? b.rows[b.rows.length - 1].value : 0;
+  b.rows.push({ value: last + 100 });
+  b.cells.push(b.cols.map(() => ({ q: '', a: '' })));
+  renderEditor();
+  requestAnimationFrame(() => document.querySelector('.cells .cell:last-child')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+}
+function addCol() {
+  pushHistory();
+  const b = S.cur.board;
+  b.cols.push({ name: '' });
+  b.cells.forEach((row) => row.push({ q: '', a: '' }));
+  renderEditor();
+  requestAnimationFrame(() => {
+    const ta = document.getElementById(`cat-${b.cols.length - 1}`);
+    if (ta) { ta.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' }); ta.focus({ preventScroll: true }); }
+  });
+}
+
+/* ---------------- editor screen ---------------- */
+function startEditor(cur) {
+  S.cur = cur;
+  S.undo = []; S.redo = [];
+  S.view = 'edit';
+  renderEditor();
+}
+function updateUndoButtons() {
+  const u = document.getElementById('btn-undo'), r = document.getElementById('btn-redo');
+  if (u) u.disabled = !S.undo.length;
+  if (r) r.disabled = !S.redo.length;
+}
+function renderEditor() {
+  document.body.classList.remove('has-scores');
+  const b = S.cur.board;
+  const dismissed = lsGet('jp-dismiss') === '1';
+  const instructions = dismissed ? null : h('p', {},
+    h('b', { text: 'Instructions: ' }),
+    "Enter your Jeopardy game title, and category names. Click a cell to enter your question/answer (it's OK to leave some rows/columns/cells blank). When you're done, click Save & Finish. ",
+    h('button', { type: 'button', class: 'dismiss', text: 'Dismiss.', onclick: () => { lsSet('jp-dismiss', '1'); renderEditor(); } }));
+  const visBtn = h('button', {
+    type: 'button', class: 'linkbtn', id: 'vis-toggle', text: b.visibility === 'private' ? 'Private' : 'Public',
+    title: 'Switch between public and private',
+    onclick: () => { pushHistory(); b.visibility = b.visibility === 'private' ? 'public' : 'private'; renderEditor(); },
+  });
+  const title = h('input', { class: 'title-in', id: 'title-in', placeholder: 'Enter Title', value: b.title, maxlength: '120', 'aria-label': 'Game title' });
+  trackField(title, (v) => { b.title = v; });
+  app.replaceChildren(
+    h('div', { class: 'ibar' }, instructions,
+      h('div', { class: 'ibar-row' },
+        h('button', { type: 'button', class: 'btn', id: 'btn-undo', html: ICON.undo + ' Undo', onclick: undo }),
+        h('button', { type: 'button', class: 'btn', id: 'btn-redo', html: ICON.redo + ' Redo', onclick: redo }),
+        h('button', { type: 'button', class: 'btn', text: '+Add Row', onclick: addRow }),
+        h('button', { type: 'button', class: 'btn', text: '+ Add Column', onclick: addCol }),
+        h('span', { class: 'vis' }, 'Visibility: ', visBtn,
+          h('small', { text: b.visibility === 'private' ? '(locked; opens with title + password)' : '(listed for everyone to play)' })),
+        h('span', { class: 'spacer' }),
+        S.cur.id ? h('button', { type: 'button', class: 'btn btn-danger', text: 'Delete', onclick: onDelete }) : null,
+        h('button', { type: 'button', class: 'btn', text: 'Play test', title: 'Try the board without saving', onclick: () => { S.cur.preview = true; startPlay(S.cur); } }),
+        h('button', { type: 'button', class: 'btn', text: 'Exit', onclick: onExit }),
+        h('button', { type: 'button', class: 'btn', text: 'Save & Finish', onclick: onSave }))),
+    title,
+    boardGrid('edit'));
+  updateUndoButtons();
+}
+function openCellEditor(r, c) {
+  const b = S.cur.board;
+  const cell = b.cells[r][c];
+  const cat = b.cols[c].name.trim() || 'Category Name';
+  const qEd = makeEditor(cell.q, 'Question prompt');
+  const aEd = makeEditor(cell.a, 'Correct response');
+  const cleanup = () => { qEd.destroy(); aEd.destroy(); };
+  const body = h('div', { class: 'qa' },
+    h('div', {}, h('h3', { text: 'Question Prompt' }), qEd.el, h('p', { class: 'hint', text: "It's traditional in Jeopardy to phrase this as a statement (ex: The third planet from the sun)" })),
+    h('div', {}, h('h3', { text: 'Correct Response' }), aEd.el, h('p', { class: 'hint', text: 'And this is traditionally phrased as a question (ex: What is Earth?)' })));
+  const d = openDialog({
+    title: `Enter ${cat} for ${b.rows[r].value}`, body, closeText: 'Close without Saving [ESC]', onClose: cleanup,
+    foot: h('div', { class: 'dlg-foot' }, h('button', {
+      type: 'button', class: 'btn', text: 'Continue', onclick: () => {
+        const q = qEd.getHtml(), a = aEd.getHtml();
+        if (q !== cell.q || a !== cell.a) { pushHistory(); b.cells[r][c] = { q, a }; }
+        d.close(); cleanup(); renderEditor();
+      },
+    })),
+  });
+  setTimeout(() => qEd.area.focus(), 0);
+}
+function onExit() {
+  const leave = () => {
+    if (S.cur.id) { S.cur.board = JSON.parse(S.cur.savedJson); S.cur.dirty = false; startPlay(S.cur); } else goHome();
+  };
+  if (!S.cur.dirty) { leave(); return; }
+  confirmDialog({ title: 'Leave without saving?', text: 'Your changes since the last save will be lost.', okText: 'Discard changes', danger: true, onOk: leave });
+}
+function onDelete() {
+  const name = S.cur.board.title.trim() || 'this board';
+  confirmDialog({
+    title: 'Delete board', text: `Delete "${name}" for everyone? This can't be undone.`, okText: 'Delete board', danger: true,
+    onOk: async () => {
+      try { await deleteFromDb(S.cur); lsSet('jp-play-' + S.cur.id, ''); S.cur = null; goHome(); toast('Board deleted.'); } catch (e) { toast(dbErrMsg(e, 'delete')); }
+    },
+  });
+}
+function onSave() {
+  const b = S.cur.board;
+  if (!b.title.trim()) {
+    toast('Give the board a title first. You open boards with their title and password.');
+    document.getElementById('title-in')?.focus();
+    return;
+  }
+  if (!S.db) {
+    toast(S.conn === 'connecting' ? 'Still connecting to storage. Try again in a moment.' : "Saving isn't available: the site has no database connection.", 4500);
+    return;
+  }
+  if (!S.cur.keys) { openSetPassword(); return; }
+  runSave();
+}
+function openSetPassword() {
+  const p1 = passwordField('pw-new', 'Password', 'new-password');
+  const p2 = passwordField('pw-confirm', 'Type it again', 'new-password');
+  const err = h('div', { class: 'err' });
+  const go = h('button', { type: 'button', class: 'btn', text: 'Save board' });
+  const submit = async () => {
+    err.textContent = '';
+    if (p1.input.value.length < 4) { err.textContent = 'Use at least 4 characters.'; return; }
+    if (p1.input.value !== p2.input.value) { err.textContent = "The two passwords don't match."; return; }
+    go.disabled = true; go.textContent = 'Saving…';
+    try {
+      S.cur.keys = await deriveKeys(p1.input.value, b64(randBytes(16)));
+      S.cur.pendingPassword = p1.input.value;
+      d.close();
+      await runSave();
+    } catch (e) { err.textContent = 'Something went wrong. Try again.'; go.disabled = false; go.textContent = 'Save board'; }
+  };
+  [p1.input, p2.input].forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); }));
+  go.addEventListener('click', submit);
+  const priv = S.cur.board.visibility === 'private';
+  const d = openDialog({
+    title: 'Set a password', size: 'dlg-sm',
+    body: [
+      h('p', { text: priv
+        ? 'This board is private. To open it, someone needs its exact title and this password. The board is encrypted with the password, so it cannot be recovered if you forget it.'
+        : 'Anyone can play a public board. You need the title and this password to edit it later. Write it down: it cannot be recovered.' }),
+      p1.el, p2.el, err],
+    foot: h('div', { class: 'dlg-foot' }, go),
+  });
+  setTimeout(() => p1.input.focus(), 0);
+}
+async function runSave() {
+  const busy = openDialog({ title: 'Saving', size: 'dlg-sm', closeText: '', body: h('div', { class: 'busy', text: 'Saving your board…' }) });
+  busy.esc = () => {};
+  try {
+    const cur = S.cur;
+    // Boards open by title + password, so two boards can't share both.
+    const clash = await findBoard(cur.board.title, cur.keys.password);
+    if (clash && clash.id !== cur.id) {
+      busy.close();
+      const wasNew = !!cur.pendingPassword;
+      if (wasNew) { cur.keys = null; cur.pendingPassword = null; }
+      toast(wasNew ? 'Another board already uses this title and password. Pick a different password.' : 'Another board already uses this title with the same password. Change the title.', 5500);
+      if (wasNew) openSetPassword();
+      return;
+    }
+    await saveToDb(cur);
+    cur.pendingPassword = null;
+    cur.savedJson = JSON.stringify(cur.board);
+    cur.dirty = false;
+    busy.close();
+    startPlay(cur);
+    toast(cur.board.visibility === 'private' ? 'Saved. Open it any time with its title and password.' : 'Saved. Your board is listed under Public boards.', 4200);
+  } catch (e) {
+    busy.close();
+    if (S.cur.pendingPassword) { S.cur.keys = null; S.cur.pendingPassword = null; }
+    toast(dbErrMsg(e, 'save'), 6000);
+  }
+}
+
+/* ---------------- play screen ---------------- */
+function loadPlay(id) {
+  let s = null;
+  try { s = JSON.parse(lsGet('jp-play-' + id) || 'null'); } catch { s = null; }
+  if (!s || !Array.isArray(s.teams) || !Array.isArray(s.played)) s = { played: [], teams: [{ name: '', score: 0 }, { name: '', score: 0 }] };
+  return s;
+}
+function savePlay() { lsSet('jp-play-' + (S.cur.preview ? 'preview' : S.cur.id || 'draft'), JSON.stringify(S.play)); }
+function backToEditor() {
+  S.cur.preview = false;
+  hideScores();
+  S.view = 'edit';
+  renderEditor();
+}
+function startPlay(cur) {
+  S.cur = cur;
+  S.view = 'play';
+  S.play = loadPlay(cur.preview ? 'preview' : cur.id || 'draft');
+  renderPlay();
+}
+function renderPlay() {
+  const b = S.cur.board;
+  const canEdit = S.canWrite !== false;
+  const preview = !!S.cur.preview;
+  app.replaceChildren(
+    h('div', { class: 'pbar' },
+      preview
+        ? h('button', { type: 'button', class: 'btn', text: '← Back to editor', onclick: backToEditor })
+        : h('button', { type: 'button', class: 'btn', text: '← All boards', onclick: goHome }),
+      h('span', { class: 'pill', text: preview ? 'Play test (not saved)' : b.visibility === 'private' ? 'Private' : 'Public' }),
+      h('span', { class: 'spacer' }),
+      canEdit && !preview ? h('button', { type: 'button', class: 'btn', text: 'Edit board', onclick: onEditFromPlay }) : null,
+      h('button', { type: 'button', class: 'btn', text: 'Reset game', onclick: () => confirmDialog({
+        title: 'Reset the game?', text: 'Every clue comes back and every score goes to 0. Team names stay.', okText: 'Reset game',
+        onOk: () => { S.play.played = []; S.play.teams.forEach((t) => { t.score = 0; }); savePlay(); renderPlay(); },
+      }) })),
+    h('h1', { class: 'play-title', text: b.title.trim() || 'Untitled board' }),
+    boardGrid('play'));
+  renderScores();
+}
+function onEditFromPlay() {
+  if (S.cur.keys) { startEditor(S.cur); return; }
+  unlockDialog(S.cur.id, S.cur.meta, S.cur.board.title, (keys) => { S.cur.keys = keys; startEditor(S.cur); });
+}
+function unlockDialog(id, meta, title, onOk) {
+  const p = passwordField('pw-unlock', 'Password', 'current-password');
+  const err = h('div', { class: 'err' });
+  const go = h('button', { type: 'button', class: 'btn', text: 'Unlock' });
+  const submit = async () => {
+    err.textContent = '';
+    go.disabled = true; go.textContent = 'Checking…';
+    const keys = await deriveKeys(p.input.value, meta.salt);
+    if (keys.verifier !== meta.verifier) { err.textContent = "That password isn't right."; go.disabled = false; go.textContent = 'Unlock'; p.input.select(); return; }
+    d.close();
+    onOk(keys);
+  };
+  go.addEventListener('click', submit);
+  p.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  const d = openDialog({
+    title: `Edit "${title || 'board'}"`, size: 'dlg-sm',
+    body: [h('p', { text: 'Enter the board password to edit it.' }), p.el, err],
+    foot: h('div', { class: 'dlg-foot' }, go),
+  });
+  setTimeout(() => p.input.focus(), 0);
+}
+
+let sbObserver = null;
+function renderScores() {
+  document.body.classList.add('has-scores');
+  let bar = document.getElementById('scores');
+  if (!bar) {
+    bar = h('div', { class: 'scores', id: 'scores', role: 'region', 'aria-label': 'Team scores' });
+    document.body.append(bar);
+    sbObserver = new ResizeObserver(() => document.documentElement.style.setProperty('--sbh', bar.offsetHeight + 'px'));
+    sbObserver.observe(bar);
+  }
+  const teams = S.play.teams;
+  const max = Math.max(...teams.map((t) => t.score));
+  bar.replaceChildren(
+    h('div', { class: 'scores-label', text: 'Scores' }),
+    ...teams.map((t, i) => {
+      const name = h('input', { class: 'team-name', id: `team-name-${i}`, placeholder: `Team ${i + 1}`, value: t.name, maxlength: '30', 'aria-label': `Team ${i + 1} name` });
+      name.addEventListener('input', () => { t.name = name.value; savePlay(); });
+      const score = h('input', { class: 'team-score' + (t.score < 0 ? ' neg' : ''), id: `team-score-${i}`, type: 'number', step: '100', value: t.score, 'aria-label': `${t.name || 'Team ' + (i + 1)} score` });
+      score.addEventListener('change', () => { t.score = Math.round(Number(score.value) || 0); savePlay(); renderScores(); });
+      return h('div', { class: 'team' + (max > 0 && t.score === max ? ' lead' : '') }, name, score,
+        teams.length > 1 ? h('button', { type: 'button', class: 'team-rm', title: 'Remove team', 'aria-label': `Remove ${t.name || 'team ' + (i + 1)}`, text: '×', onclick: () => { teams.splice(i, 1); savePlay(); renderScores(); refreshAward(); } }) : null);
+    }),
+    teams.length < 12 ? h('button', { type: 'button', class: 'add-team', text: '+ Add team', onclick: () => {
+      teams.push({ name: '', score: 0 }); savePlay(); renderScores(); refreshAward();
+      document.getElementById(`team-name-${teams.length - 1}`)?.focus();
+    } }) : null);
+}
+function hideScores() {
+  document.getElementById('scores')?.remove();
+  if (sbObserver) { sbObserver.disconnect(); sbObserver = null; }
+  document.body.classList.remove('has-scores');
+  document.documentElement.style.setProperty('--sbh', '0px');
+}
+let refreshAward = () => {};
+function openClue(r, c) {
+  const b = S.cur.board;
+  const cell = b.cells[r][c];
+  const val = b.rows[r].value;
+  const awards = new Map(); // team object -> +1 | -1
+  const prompt = hasContent(cell.q) ? renderRich(cell.q) : h('div', { class: 'clue-empty', text: '(No prompt for this clue)' });
+  const resp = h('div', { class: 'clue-resp', hidden: true }, hasContent(cell.a) ? renderRich(cell.a) : h('div', { class: 'clue-empty', text: '(No response written)' }));
+  const showBtn = h('button', { type: 'button', class: 'btn btn-gold', text: 'Show response', onclick: () => { resp.hidden = false; showBtn.hidden = true; } });
+  const award = h('div', { class: 'award', 'aria-label': 'Award points' });
+  const bump = (i) => requestAnimationFrame(() => document.getElementById(`team-score-${i}`)?.classList.add('bump'));
+  const toggle = (t, i, dir) => {
+    const prevDir = awards.get(t) || 0;
+    t.score -= prevDir * val;
+    const next = prevDir === dir ? 0 : dir;
+    t.score += next * val;
+    if (next) awards.set(t, next); else awards.delete(t);
+    savePlay(); renderScores(); refreshAward(); bump(i);
+  };
+  refreshAward = () => {
+    award.replaceChildren(...S.play.teams.map((t, i) => {
+      const a = awards.get(t) || 0;
+      return h('div', { class: 'award-team' }, h('span', { text: t.name.trim() || `Team ${i + 1}` }),
+        h('button', { type: 'button', class: 'aw plus' + (a === 1 ? ' on' : ''), 'aria-pressed': a === 1 ? 'true' : 'false', text: `✓ +${val}`, onclick: () => toggle(t, i, 1) }),
+        h('button', { type: 'button', class: 'aw minus' + (a === -1 ? ' on' : ''), 'aria-pressed': a === -1 ? 'true' : 'false', text: `✗ −${val}`, onclick: () => toggle(t, i, -1) }));
+    }));
+  };
+  refreshAward();
+  const entry = {};
+  const finish = (markPlayed) => {
+    ov.remove();
+    const i = stack.indexOf(entry);
+    if (i >= 0) stack.splice(i, 1);
+    refreshAward = () => {};
+    if (markPlayed) { S.play.played.push(`${r},${c}`); savePlay(); }
+    renderPlay();
+  };
+  entry.esc = () => finish(awards.size > 0);
+  const ov = h('div', { class: 'clue-ov', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${b.cols[c].name} for ${val}` },
+    h('div', { class: 'clue-meta' }, `${b.cols[c].name.trim() || 'Category ' + (c + 1)} · `, h('b', { text: val })),
+    h('div', { class: 'clue-main' }, h('div', { class: 'clue-text' }, prompt), resp),
+    h('div', { class: 'clue-actions' }, showBtn,
+      h('button', { type: 'button', class: 'btn', text: 'Back to board', onclick: () => finish(true) })),
+    award);
+  document.body.append(ov);
+  stack.push(entry);
+  setTimeout(() => showBtn.focus(), 0);
+}
+
+/* ---------------- home screen ---------------- */
+function goHome() {
+  S.view = 'home';
+  S.cur = null;
+  hideScores();
+  renderHome();
+}
+function newBoardCur() { const board = newBoard(); return { id: null, meta: null, board, keys: null, savedJson: JSON.stringify(board), dirty: false }; }
+function renderHome() {
+  hideScores();
+  const canWrite = S.canWrite !== false;
+  let notice = null;
+  if (S.conn === 'offline') notice = h('div', { class: 'notice', text: "Saving isn't available right now because the site can't reach its database. You can still build a board and try it with Play test, but it won't be saved." });
+  const tIn = h('input', { class: 'in', id: 'open-title', placeholder: 'Board title', autocomplete: 'off', 'aria-label': 'Board title' });
+  const pw = h('input', { class: 'in', id: 'open-pw', type: 'password', placeholder: 'Password', autocomplete: 'current-password', 'aria-label': 'Password' });
+  const err = h('div', { class: 'err', 'aria-live': 'polite' });
+  const openBtn = h('button', { type: 'submit', class: 'btn', text: 'Open board' });
+  const form = h('form', {}, tIn, pw, h('div', {}, openBtn), err);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    if (!tIn.value.trim() || !pw.value) { err.textContent = 'Enter the board title and its password.'; return; }
+    if (!S.db) { err.textContent = S.conn === 'connecting' ? 'Still connecting. Try again in a moment.' : "Saved boards can't be opened right now: the site can't reach its database."; return; }
+    openBtn.disabled = true; openBtn.textContent = 'Opening…';
+    try {
+      const hit = await findBoard(tIn.value, pw.value);
+      if (!hit) { err.textContent = 'No board matches that title and password. Check both and try again.'; return; }
+      const board = await loadFromDb(hit.id, hit.meta, hit.keys);
+      startPlay({ id: hit.id, meta: hit.meta, board, keys: hit.keys, savedJson: JSON.stringify(board), dirty: false });
+    } catch (e2) {
+      err.textContent = dbErrMsg(e2, 'open');
+    } finally { openBtn.disabled = false; openBtn.textContent = 'Open board'; }
+  });
+  const filter = h('input', { class: 'in', id: 'pub-filter', type: 'search', placeholder: 'Filter by title', value: S.filter, 'aria-label': 'Filter public boards' });
+  filter.addEventListener('input', () => { S.filter = filter.value; renderPublicList(); });
+  app.replaceChildren(h('div', { class: 'home' },
+    h('header', { class: 'logo' }, h('h1', {}, 'JEOPARDY', h('span', { text: '!' })),
+      h('p', { text: 'Build a board with math, code and pictures, lock it with a password, and play it with teams.' })),
+    notice,
+    h('div', { class: 'home-grid' },
+      h('section', { class: 'panel' }, h('h2', { text: 'Create a board' }),
+        h('p', { text: 'Start from a 5 × 5 board. Add rows and columns, write each clue, then save it as public or private.' }),
+        h('div', {}, h('button', { type: 'button', class: 'btn', text: '+ Create board', disabled: !canWrite, onclick: () => startEditor(newBoardCur()) }))),
+      h('section', { class: 'panel' }, h('h2', { text: 'Open a board' }),
+        h('p', { text: 'Private boards open with their exact title and password. This also unlocks editing.' }), form)),
+    h('section', { class: 'panel' }, h('div', { class: 'pub-head' }, h('h2', { text: 'Public boards' }), filter), h('div', { class: 'pub-list', id: 'pub-list' }))));
+  renderPublicList();
+}
+function renderPublicList() {
+  const list = document.getElementById('pub-list');
+  if (!list) return;
+  if (S.conn === 'connecting') { list.replaceChildren(h('div', { class: 'pub-empty', text: 'Loading boards…' })); return; }
+  if (S.conn === 'offline') { list.replaceChildren(h('div', { class: 'pub-empty', text: "Public boards can't load because the site can't reach its database." })); return; }
+  if (S.listErr) { list.replaceChildren(h('div', { class: 'pub-empty', text: "Couldn't load public boards. Reload the page to try again." })); return; }
+  const f = normTitle(S.filter || '');
+  const rows = S.boards.filter((m) => m.title && !m.deleted && (!f || normTitle(m.title).includes(f))).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!rows.length) { list.replaceChildren(h('div', { class: 'pub-empty', text: S.boards.length ? 'No public boards match that filter.' : 'No public boards yet. Create one to see it here.' })); return; }
+  const canWrite = S.canWrite !== false;
+  list.replaceChildren(...rows.map((m) => h('div', { class: 'pub-row' },
+    h('div', { class: 'pub-title' }, h('b', { text: m.title }),
+      h('small', { text: `${m.cols || '?'} categories · ${m.clues ?? '?'} clues · updated ${new Date(m.updatedAt || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` })),
+    h('button', { type: 'button', class: 'btn', text: 'Play', onclick: (e) => openPublic(m, e.currentTarget, false) }),
+    canWrite ? h('button', { type: 'button', class: 'btn', text: 'Edit', onclick: (e) => openPublic(m, e.currentTarget, true) }) : null)));
+}
+async function openPublic(m, btn, edit) {
+  const go = async (keys) => {
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Opening…';
+    try {
+      const snap = await S.db.doc(`boards/${m.id}`).get();
+      const meta = snap.exists ? snap.data() : null;
+      if (!meta || meta.deleted) { toast('That board was deleted.'); return; }
+      const board = await loadFromDb(m.id, meta, keys);
+      const cur = { id: m.id, meta, board, keys, savedJson: JSON.stringify(board), dirty: false };
+      if (edit) startEditor(cur); else startPlay(cur);
+    } catch (e) { toast(dbErrMsg(e, 'open')); } finally { btn.disabled = false; btn.textContent = label; }
+  };
+  if (edit) unlockDialog(m.id, m, m.title, go); else go(null);
+}
+
+/* ---------------- boot ---------------- */
+renderHome();
+(function init() {
+  let db = null;
+  const cfg = window.FIREBASE_CONFIG;
+  try {
+    if (window.firebase && cfg && cfg.projectId) db = firebase.firestore(firebase.initializeApp(cfg));
+  } catch { db = null; }
+  S.db = db;
+  S.conn = db ? 'ready' : 'offline';
+  S.canWrite = true;
+  if (db) {
+    db.collection('boards').where('visibility', '==', 'public').onSnapshot((snap) => {
+      S.boards = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      S.listErr = null;
+      if (S.view === 'home') renderPublicList();
+    }, (e) => { S.listErr = e.code || 'error'; if (S.view === 'home') renderPublicList(); });
+  }
+  if (S.view === 'home') renderHome();
+})();
+</script>
+</body>
+</html>
