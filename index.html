@@ -318,12 +318,12 @@ window.MathJax = {
 // Firebase web config (Project settings > Your apps > Web app). These values are public by design;
 // firestore.rules is what protects the data.
 window.FIREBASE_CONFIG = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyC1CGarWQjcZua8z4FdaCAcaepXPnTy9aI',
+  authDomain: 'jeopardy-builder.firebaseapp.com',
+  projectId: 'jeopardy-builder',
+  storageBucket: 'jeopardy-builder.firebasestorage.app',
+  messagingSenderId: '1020523599291',
+  appId: '1:1020523599291:web:c91a7b3b7e158ed9d3609e',
 };
 </script>
 <script>
@@ -498,7 +498,10 @@ async function editKeyFor(keys, nonce) {
   buf.set(keys.secret); buf.set(n, keys.secret.length);
   return b64(await crypto.subtle.digest('SHA-256', buf));
 }
-async function editHashOf(editKey) { return b64(await crypto.subtle.digest('SHA-256', enc.encode(editKey))); }
+// Firestore rules' Bytes.toBase64() is base64url (with padding), so the stored hash uses the same alphabet.
+async function editHashOf(editKey) {
+  return b64(await crypto.subtle.digest('SHA-256', enc.encode(editKey))).replace(/\+/g, '-').replace(/\//g, '_');
+}
 async function pipeBytes(bytes, stream) {
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 }
