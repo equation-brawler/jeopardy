@@ -2,7 +2,7 @@
 
 Build Jeopardy boards with fonts, images, LaTeX and code blocks, save them as public or password-locked private boards, and play them with team scoring. No accounts: everything runs in the browser, and boards are stored in Cloud Firestore.
 
-Live: https://equation-brawler.github.io/jeopardy/
+Live: https://jeopardy-builder.github.io/
 
 ## How saving works
 
